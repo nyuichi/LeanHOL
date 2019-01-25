@@ -15,7 +15,7 @@ inductive preterm : type → Type
 | var : Π {t}, ν t → preterm t
 | lam : Π {t₁ t₂}, (ν t₁ → preterm t₂) → preterm (arrow t₁ t₂)
 | app : Π {t₁ t₂}, preterm (arrow t₁ t₂) → preterm t₁ → preterm t₂
-| id : Π {t}, preterm t → preterm t → preterm prop
+| eq : Π {t}, preterm t → preterm t → preterm prop
 open preterm
 
 def Preterm (t : type) : Type 1 :=
@@ -43,7 +43,7 @@ def preterm.to_string' : Π {t}, preterm (λ t, ℕ) t → ℕ → string
 | _ (var n) _ := to_string n
 | _ (lam f) lv := "(λ" ++ to_string lv ++ "." ++ preterm.to_string' (f lv) (lv + 1) ++ ")"
 | _ (app m₁ m₂) lv := "(" ++ preterm.to_string' m₁ lv ++ " " ++ preterm.to_string' m₂ lv ++ ")"
-| _ (id m₁ m₂) lv := "(" ++ preterm.to_string' m₁ lv ++ " = " ++ preterm.to_string' m₂ lv ++ ")"
+| _ (eq m₁ m₂) lv := "(" ++ preterm.to_string' m₁ lv ++ " = " ++ preterm.to_string' m₂ lv ++ ")"
 
 def preterm.to_string : Preterm t → string :=
 λ m, preterm.to_string' (m _) 0 ++ " : " ++ to_string t
@@ -72,7 +72,7 @@ def subst' : Π {t : type}, preterm (preterm ν) t → preterm ν t
 | _ (var m) := m
 | _ (lam f) := lam (λ x, subst' (f (var x)))
 | _ (app m₁ m₂) := app (subst' m₁) (subst' m₂)
-| _ (id m₁ m₂) := id (subst' m₁) (subst' m₂)
+| _ (eq m₁ m₂) := eq (subst' m₁) (subst' m₂)
 
 def type.fold : list type → type → type :=
 λ Γ t, list.foldr arrow t Γ
@@ -148,12 +148,12 @@ def term.var' : Π {Γ}, (t ∈ Γ) → Term Γ t
 def term.var : (t ∈ Γ) → Term Γ t :=
 term.var'
 
-def term.id' : Π {Γ : list type}, term ν Γ t → term ν Γ t → term ν Γ prop
-| [] m₁ m₂ := id m₁ m₂
-| (t :: Γ) m₁ m₂ := λ x, term.id' (m₁ x) (m₂ x)
+def term.eq' : Π {Γ : list type}, term ν Γ t → term ν Γ t → term ν Γ prop
+| [] m₁ m₂ := eq m₁ m₂
+| (t :: Γ) m₁ m₂ := λ x, term.eq' (m₁ x) (m₂ x)
 
-def term.id : Term Γ t → Term Γ t → Term Γ prop :=
-λ m₁ m₂ ν, term.id' ν (m₁ ν) (m₂ ν)
+def term.eq : Term Γ t → Term Γ t → Term Γ prop :=
+λ m₁ m₂ ν, term.eq' ν (m₁ ν) (m₂ ν)
 
 -----
 
@@ -191,7 +191,7 @@ def preterm.eval' : Π {t : type}, preterm (domain ν) t → (domain ν t)
 | _ (var x) := x
 | _ (lam f) := λ x, preterm.eval' (f x)
 | _ (app m₁ m₂) := (preterm.eval' m₁) (preterm.eval' m₂)
-| _ (id m₁ m₂) := id (preterm.reify' ν (preterm.eval' m₁)) (preterm.reify' ν (preterm.eval' m₂))
+| _ (eq m₁ m₂) := eq (preterm.reify' ν (preterm.eval' m₁)) (preterm.reify' ν (preterm.eval' m₂))
 
 def preterm.eval : Preterm t → Domain t :=
 λ m ν, preterm.eval' ν (m _)
@@ -212,25 +212,25 @@ def weaken : Term [] t → Term Γ t :=
 λ m, by rw ←list.append_nil Γ; from term.weaken m
 
 def term.top : Term Γ prop :=
-weaken $ λ ν, id (lam (λ x : ν prop, var x)) (lam (λ x, var x))
+weaken $ λ ν, eq (lam (λ x : ν prop, var x)) (lam (λ x, var x))
 
 def term.and : Term Γ (arrow prop (arrow prop prop)) :=
-weaken $ λ ν, lam (λ p₁, lam (λ p₂, id (lam (λ f : ν (arrow _ (arrow _ prop)), app (app (var f) (@term.top [] ν)) (@term.top [] ν))) (lam (λ f, app (app (var f) (var p₁)) (var p₂)))))
+weaken $ λ ν, lam (λ p₁, lam (λ p₂, eq (lam (λ f : ν (arrow _ (arrow _ prop)), app (app (var f) (@term.top [] ν)) (@term.top [] ν))) (lam (λ f, app (app (var f) (var p₁)) (var p₂)))))
 
 def term.forall : Term Γ (arrow (arrow t prop) prop) :=
-weaken $ λ ν, lam (λ f, id (var f) (lam (λ x, (@term.top [] ν))))
+weaken $ λ ν, lam (λ f, eq (var f) (lam (λ x, (@term.top [] ν))))
 
 def term.bot : Term Γ prop :=
 weaken $ λ ν, app (@term.forall [] _ ν) (lam (λ p, var p))
 
 def term.implies : Term Γ (arrow prop (arrow prop prop)) :=
-weaken $ λ ν, lam (λ p₁, lam (λ p₂, id (app (app (@term.and [] ν) (var p₁)) (var p₂)) (var p₁)))
+weaken $ λ ν, lam (λ p₁, lam (λ p₂, eq (app (app (@term.and [] ν) (var p₁)) (var p₂)) (var p₁)))
 
 def term.not : Term Γ (arrow prop prop) :=
 weaken $ λ ν, lam (λ p, app (app (@term.implies [] ν) (var p)) (@term.bot [] ν))
 
 def term.iff : Term Γ (arrow prop (arrow prop prop)):=
-weaken $ λ ν, lam (λ p₁, lam (λ p₂, id (var p₁) (var p₂)))
+weaken $ λ ν, lam (λ p₁, lam (λ p₂, eq (var p₁) (var p₂)))
 
 def term.or : Term Γ (arrow prop (arrow prop prop)) :=
 weaken $ λ ν, lam (λ p₁, lam (λ p₂, app (@term.forall [] _ ν) (lam (λ r, app (app (@term.implies [] ν) (app (app (@term.and [] ν) (app (app (@term.implies [] ν) (var p₁)) (var r))) (app (app (@term.implies [] ν) (var p₂)) (var r)))) (var r)))))
@@ -238,18 +238,20 @@ weaken $ λ ν, lam (λ p₁, lam (λ p₂, app (@term.forall [] _ ν) (lam (λ 
 def term.exists : Term Γ (arrow (arrow t prop) prop) :=
 weaken $ λ ν, lam (λ f, app (@term.forall [] _ ν) (lam (λ r, app (app (@term.implies [] ν) (app (@term.forall [] _ ν) (lam (λ x, app (app (@term.implies [] ν) (app (var f) (var x))) (var r))))) (var r))))
 
-#eval (term.app (term.app term.and term.top) (term.app (term.app term.or term.bot) term.top) : Term [] prop)
+#eval @id (Term [] prop) $ term.app (term.app term.and term.top) (term.app (term.app term.or term.bot) term.top)
 
 ----
 
 inductive proof : Π {Γ}, list (Term Γ prop) → Term Γ prop → Prop
-| assump : Π {Γ} (Φ : list (Term Γ prop)) (φ : Term Γ prop) {h : φ ∈ Φ}, proof Φ φ
-| refl : Π {Γ} (Φ : list (Term Γ prop)) {t} (m₁ m₂ : Term Γ t) {h : m₁ ≈ m₂}, proof Φ (term.id m₁ m₂)
-| cong : Π {Γ} (Φ : list (Term Γ prop)) {t} {m₁ m₂ : Term Γ t} (m : Term (t :: Γ) prop), proof Φ (term.id m₁ m₂) → proof Φ (term.subst m m₁) → proof Φ (term.subst m m₂)
-| propext : Π {Γ} (Φ : list (Term Γ prop)) {φ₁ φ₂ : Term Γ prop}, proof (φ₁ :: Φ) φ₂ → proof (φ₂ :: Φ) φ₁ → proof Φ (term.id φ₁ φ₂)
-| funext : Π {Γ} (Φ : list (Term Γ prop)) {t₁ t₂} {m₁ m₂ : Term (t₁ :: Γ) t₂}, proof (list.map term.weaken1 Φ) (term.id m₁ m₂) → proof Φ (term.id (term.abs m₁) (term.abs m₂))
+| assump : Π {Γ Φ} {φ : Term Γ prop}, φ ∈ Φ → proof Φ φ
+| refl : Π {Γ Φ t} {m₁ m₂ : Term Γ t}, m₁ ≈ m₂ → proof Φ (term.eq m₁ m₂)
+| cong : Π {Γ Φ t} (m : Term (t :: Γ) prop) (m₂ m₁ : Term Γ t), proof Φ (term.eq m₁ m₂) → proof Φ (term.subst m m₁) → proof Φ (term.subst m m₂)
+| propext : Π {Γ Φ} {φ₁ φ₂ : Term Γ prop}, proof (φ₁ :: Φ) φ₂ → proof (φ₂ :: Φ) φ₁ → proof Φ (term.eq φ₁ φ₂)
+| funext : Π {Γ Φ t₁ t₂} (m₁ m₂ : Term (t₁ :: Γ) t₂), proof (list.map term.weaken1 Φ) (term.eq m₁ m₂) → proof Φ (term.eq (term.abs m₁) (term.abs m₂))
 
-example : @proof [prop] [term.var0] (term.id term.top term.var0) :=
+-- Let's prove!
+
+example : @proof [prop] [term.var0] (term.eq term.top term.var0) :=
 begin
   apply proof.propext,
   { apply proof.assump,
@@ -258,54 +260,46 @@ begin
     refl }
 end
 
-example : @proof [prop] [term.id term.top term.var0] term.var0 :=
+example : @proof [prop] [term.eq term.top term.var0] term.var0 :=
 begin
-  change @proof [prop] [term.id term.top term.var0] (term.subst term.var0 term.var0),
-  apply @proof.cong _ _ _ term.top,
+  apply proof.cong (@term.var0 [prop] _) term.var0 term.top,
   { apply proof.assump,
     simp },
-  { change @proof [prop] [term.id term.top term.var0] term.top,
-    apply proof.refl,
+  { apply proof.refl,
     simp }
 end
 
-example {φ₁ φ₂} : @proof [] [] (term.app (term.app term.and φ₁) φ₂) → @proof [] [] φ₁ :=
+example {φ₁ φ₂} {Φ : list (Term [] prop)} : @proof [] Φ (term.app (term.app term.and φ₁) φ₂) → @proof [] Φ φ₁ :=
 begin
   intro p,
-  change @proof [] [] (term.subst term.var0 φ₁),
-  let q : Term [] prop := λ ν, app (lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))) (lam (λ p₁, lam (λ p₂, var p₁))),
-  apply @proof.cong _ _ _ q,
+  apply proof.cong
+    term.var0
+    φ₁
+    (λ ν, app (lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))) (lam (λ p₁, lam (λ p₂, var p₁)))),
   { apply proof.refl,
     funext,
     refl },
-  { change @proof [] [] q,
-    let m₁ : Term [arrow (arrow prop (arrow prop prop)) prop] prop := λ ν f, app (var f) (lam (λ p₁, lam (λ p₂, var p₁))),
-    let m₂ : Term [] _ := λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν)),
-    change @proof [] [] (term.subst m₁ m₂),
-    let m₃ : Term [] (arrow (arrow prop (arrow prop prop)) prop) := λ ν, lam (λ f, app (app (var f) (@term.top [] ν)) (@term.top [] ν)),
-    apply @proof.cong _ _ _ m₃,
-    { clear q m₁,
-      unfold term.app term.and weaken term.weaken term.app' at p,
-      let m₄ : Term [] prop := λ ν, app (app (lam (λ p₁, lam (λ p₂, id (lam (λ f : ν (arrow _ (arrow _ prop)), app (app (var f) (@term.top [] ν)) (@term.top [] ν))) (lam (λ f, app (app (var f) (var p₁)) (var p₂)))))) (φ₁ ν)) (φ₂ ν),
-      change @proof [] [] (term.subst term.var0 (term.id m₃ m₂)),
-      apply @proof.cong _ _ _ m₄,
+  { apply proof.cong
+      (@id (Term [arrow _ prop] prop) $ λ ν f, app (var f) (lam (λ p₁, lam (λ p₂, var p₁))))
+      (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν)))
+      (@id (Term [] (arrow _ prop)) $ λ ν, lam (λ f, app (app (var f) (@term.top [] ν)) (@term.top [] ν))),
+    { apply proof.cong
+        term.var0
+        (term.eq
+          (@id (Term [] (arrow _ prop)) $ λ ν, lam (λ f, app (app (var f) (@term.top [] ν)) (@term.top [] ν)))
+          (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))))
+        (weaken $ λ ν, app (app (lam (λ p₁, lam (λ p₂, eq (lam (λ f : ν (arrow _ (arrow _ prop)), app (app (var f) (@term.top [] ν)) (@term.top [] ν))) (lam (λ f, app (app (var f) (var p₁)) (var p₂)))))) (φ₁ ν)) (φ₂ ν)),
       { apply proof.refl,
-        unfold has_equiv.equiv setoid.r inv_image,
-        simp [m₄, m₂, m₃],
         funext,
         refl },
-      { change @proof [] [] m₄,
-        simp [m₄],
-        from p } },
-    { let m₅ := λ ν, app (lam (λ f, app (app (var f) (@term.top [] ν)) (@term.top [] ν))) (lam (λ p₁, lam (λ p₂, var p₁))),
-      let m₆ := λ ν, @term.top [] ν,
-      change @proof [] [] (term.subst term.var0 m₅),
-      apply @proof.cong _ _ _ m₆,
+      { from p } },
+    { apply proof.cong
+        term.var0
+        (weaken $ (λ ν, app (lam (λ f, app (app (var f) (@term.top [] ν)) (@term.top [] ν))) (lam (λ p₁, lam (λ p₂, var p₁)))))
+        (weaken $ (λ ν, @term.top [] ν) : Term [] prop),
       { apply proof.refl,
-        simp [m₅, m₆],
         funext,
         refl },
-      { change @proof [] [] (@term.top []),
-        apply proof.refl,
-        refl } } },
+      { apply proof.refl,
+        refl } } }
 end
