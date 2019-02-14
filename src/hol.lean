@@ -81,36 +81,37 @@ namespace judgment
   def eq : Judgment Γ t → Judgment Γ t → Judgment Γ prop :=
   λ m₁ m₂ ν, eq' ν (m₁ ν) (m₂ ν)
 
-  def subst''' : Π {Γ}, judgment (term ν) (t₁ :: Γ) t₂ → judgment ν Γ t₁ → judgment ν Γ t₂
+  def subst'' : Π {Γ}, judgment (term ν) (t₁ :: Γ) t₂ → judgment ν Γ t₁ → judgment ν Γ t₂
   | [] m₁ m₂ := subst' ν (m₁ m₂)
-  | (t :: Γ) f m := λ x, subst''' (λ x', f x' (term.var x)) (m x)
+  | (t :: Γ) f m := λ x, subst'' (λ x', f x' (term.var x)) (m x)
 
   def subst : Judgment (t₁ :: Γ) t₂ → Judgment Γ t₁ → Judgment Γ t₂ :=
-  λ m₁ m₂ ν, subst''' ν (m₁ _) (m₂ ν)
+  λ m₁ m₂ ν, subst'' ν (m₁ _) (m₂ ν)
 end judgment
 open judgment
 
 ----
 
-def type.fold : list type → type → type :=
+def type.foldr : list type → type → type :=
 λ Γ t, list.foldr arrow t Γ
 
-def judgment.to_term' : Π {Γ : list type}, judgment ν Γ t → term ν (type.fold Γ t)
+def judgment.to_term' : Π {Γ : list type}, judgment ν Γ t → term ν (type.foldr Γ t)
 | [] m := m
 | (t :: Γ) f := lam (λ x, judgment.to_term' (f x))
 
-def judgment.to_term : Judgment Γ t → Term (type.fold Γ t) :=
+def judgment.to_term : Judgment Γ t → Term (type.foldr Γ t) :=
 λ m ν, judgment.to_term' ν (m ν)
 
-def term_subst' : term (term ν) (arrow t₁ t₂) → term ν t₁ → term (term ν) t₂
-| (lam f) m := f m
-| m₁ m₂ := app m₁ (var m₂)
-
-def term.to_judgment' : Π {Γ : list type}, term (term ν) (type.fold Γ t) → judgment ν Γ t
+def term.to_judgment' : Π {Γ : list type}, term (term ν) (type.foldr Γ t) → judgment ν Γ t
 | [] m := subst' ν m
-| (t :: Γ) m := λ x, term.to_judgment' (term_subst' ν m (var x))
+| (t :: Γ) m :=
+  match m with
+  | (var x) := λ x, term.to_judgment' (app m (var (var x)))
+  | (lam f) := λ x, term.to_judgment' (f (var x))
+  | (app m₁ m₂) := λ x, term.to_judgment' (app m (var (var x)))
+  end
 
-def term.to_judgment : Term (type.fold Γ t) → Judgment Γ t :=
+def term.to_judgment : Term (type.foldr Γ t) → Judgment Γ t :=
 λ m ν, term.to_judgment' ν (m _)
 
 ----
@@ -155,44 +156,12 @@ instance term_setoid : setoid (Term t) :=
 ⟨inv_image eq normalize,
  inv_image.equivalence eq normalize eq.equivalence⟩
 
-instance judgment_setoid [h : setoid (Term (type.fold Γ t))] : setoid (Judgment Γ t) :=
+instance judgment_setoid [h : setoid (Term (type.foldr Γ t))] : setoid (Judgment Γ t) :=
 ⟨inv_image h.r judgment.to_term,
  inv_image.equivalence h.r judgment.to_term h.iseqv⟩
 
-----
-
-def type.to_string : type → string
-| base := "ι"
-| prop := "ο"
-| (arrow t₁ t₂) := "(" ++ type.to_string t₁ ++ " → " ++ type.to_string t₂ ++ ")"
-
-instance : has_to_string type :=
-⟨type.to_string⟩
-
-def term.to_string' : Π {t}, term (λ t, ℕ) t → ℕ → string
-| _ (var n) _ := to_string n
-| _ (lam f) lv := "(λ" ++ to_string lv ++ "." ++ term.to_string' (f lv) (lv + 1) ++ ")"
-| _ (app m₁ m₂) lv := "(" ++ term.to_string' m₁ lv ++ " " ++ term.to_string' m₂ lv ++ ")"
-| _ (eq m₁ m₂) lv := "(" ++ term.to_string' m₁ lv ++ " = " ++ term.to_string' m₂ lv ++ ")"
-
-def term.to_string : Term t → string :=
-λ m, term.to_string' (m _) 0 ++ " : " ++ to_string t
-
-instance term_has_to_string : has_to_string (Term t) :=
-⟨ term.to_string ⟩
-
-def judgment.to_string' : Π {Γ}, judgment (λ t, ℕ) Γ t → ℕ → string
-| [] m lv := "⊢ " ++ term.to_string' m lv
-| (t :: Γ) f lv := "(" ++ to_string lv ++ " : " ++ to_string t ++ ") " ++ judgment.to_string' (f lv) (lv + 1)
-
-def judgment.to_string : Judgment Γ t → string :=
-λ m, judgment.to_string' (m _) 0 ++ " : " ++ to_string t
-
-instance judgment_has_to_string : has_to_string (Judgment Γ t) :=
-⟨judgment.to_string⟩
-
-instance : has_repr (Judgment Γ t) :=
-⟨judgment.to_string⟩
+meta def canonicity : tactic unit :=
+`[ try { unfold has_equiv.equiv setoid.r inv_image }, try { reflexivity } ]
 
 ----
 
@@ -215,8 +184,8 @@ namespace term
   def not : Term (arrow prop prop) :=
   λ ν, lam (λ p, app (app (implies ν) (var p)) (bot ν))
 
-  def iff : Term (arrow prop (arrow prop prop)):=
-  λ ν, lam (λ p₁, lam (λ p₂, eq (var p₁) (var p₂)))
+  def iff : Term (arrow prop (arrow prop prop)) :=
+  λ ν, lam (λ p₁, lam (λ p₂, app (app (and ν) (app (app (implies ν) (var p₁)) (var p₂))) (app (app (implies ν) (var p₂)) (var p₁))))
 
   def or : Term (arrow prop (arrow prop prop)) :=
   λ ν, lam (λ p₁, lam (λ p₂, app (Forall ν) (lam (λ r, app (app (implies ν) (app (app (and ν) (app (app (implies ν) (var p₁)) (var r))) (app (app (implies ν) (var p₂)) (var r)))) (var r)))))
@@ -226,7 +195,7 @@ namespace term
 end term
 open term
 
-#eval @id (Judgment [] prop) $ app (app and top) (app (app or bot) top)
+#reduce @id (Judgment [] prop) $ app (app and top) (app (app or bot) top)
 
 ----
 
@@ -245,16 +214,7 @@ begin
   { apply proof.assump,
     simp },
   { apply proof.refl,
-    refl }
-end
-
-example : @proof [prop] [eq (weak top) (var here)] (var here) :=
-begin
-  apply proof.cong (var here) (var here) (weak $ @id (Judgment [] prop) top),
-  { apply proof.assump,
-    simp },
-  { apply proof.refl,
-    simp }
+    canonicity }
 end
 
 example {φ₁ φ₂} {Φ : list (Judgment [] prop)} : proof Φ (app (app and φ₁) φ₂) → proof Φ φ₁ :=
@@ -265,8 +225,7 @@ begin
     φ₁
     (λ ν, app (lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))) (lam (λ p₁, lam (λ p₂, var p₁)))),
   { apply proof.refl,
-    funext,
-    refl },
+    canonicity, },
   { apply proof.cong
       (@id (Judgment [arrow _ prop] prop) $ λ ν f, app (var f) (lam (λ p₁, lam (λ p₂, var p₁))))
       (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν)))
@@ -278,18 +237,16 @@ begin
           (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))))
         (λ ν, app (app (lam (λ p₁, lam (λ p₂, eq (lam (λ f : ν (arrow _ (arrow _ prop)), app (app (var f) (top ν)) (top ν))) (lam (λ f, app (app (var f) (var p₁)) (var p₂)))))) (φ₁ ν)) (φ₂ ν)),
       { apply proof.refl,
-        funext,
-        refl },
+        canonicity },
       { from p } },
     { apply proof.cong
         (var here)
         (@id (Judgment [] _) $ λ ν, app (lam (λ f, app (app (var f) (top ν)) (top ν))) (lam (λ p₁, lam (λ p₂, var p₁))))
         top,
       { apply proof.refl,
-        funext,
-        refl },
+        canonicity },
       { apply proof.refl,
-        refl } } }
+        canonicity } } }
 end
 
 end hol

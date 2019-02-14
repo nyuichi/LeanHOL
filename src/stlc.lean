@@ -75,6 +75,14 @@ def domain : type → Type
 def Domain (t : type) : Type 1 :=
 Π ν, domain ν t
 
+def eval' : Π {t : type}, term (domain ν) t → domain ν t
+| _ (var x) := x
+| _ (lam f) := λ x, eval' (f x)
+| _ (app m₁ m₂) := (eval' m₁) (eval' m₂)
+
+def eval : Term t → Domain t :=
+λ m ν, eval' ν (m _)
+
 -- def nbe_wf : psum (Σ' {t : type}, domain ν t) (Σ' {t : type}, term ν t) → ℕ :=
 -- λ v, match v with
 -- | (psum.inl x) := sizeof x.fst
@@ -103,14 +111,6 @@ def reify_reflect : Π (t : type), (domain ν t → term ν t) × (term ν t →
 def reify : Domain t → Term t :=
 λ x ν, (reify_reflect ν t).1 (x ν)
 
-def eval' : Π {t : type}, term (domain ν) t → domain ν t
-| _ (var x) := x
-| _ (lam f) := λ x, eval' (f x)
-| _ (app m₁ m₂) := (eval' m₁) (eval' m₂)
-
-def eval : Term t → Domain t :=
-λ m ν, eval' ν (m _)
-
 def normalize : Term t → Term t :=
 reify ∘ eval
 
@@ -129,17 +129,17 @@ instance : setoid (Term t) :=
 ⟨inv_image eq normalize,
  inv_image.equivalence eq normalize eq.equivalence⟩
 
+meta def canonicity : tactic unit :=
+`[ try { unfold has_equiv.equiv setoid.r inv_image }, try { reflexivity } ]
+
 def one : Term (arrow (arrow base base) (arrow base base)) :=
 λ ν, lam (λ f, lam (λ x, app (var f) (var x)))
 
-lemma zero_approx_zero : zero ≈ zero :=
-by reflexivity
+lemma zero_eqv_zero : zero ≈ zero :=
+by canonicity
 
-lemma succ_zero_approx_one : App succ zero ≈ one :=
-begin
-  unfold has_equiv.equiv setoid.r inv_image,
-  reflexivity
-end
+lemma succ_zero_eqv_one : App succ zero ≈ one :=
+by canonicity
 
 ----
 
@@ -150,10 +150,10 @@ inductive mem : α → list α → Type
 | there : Π {x l y}, mem x l → mem x (y :: l)
 open mem
 
-local infix ` ∈ ` := mem
+local infix ` ∈' `:50 := mem
 
 inductive judgment₁ : list type → type → Type
-| var : Π {Γ t}, t ∈ Γ → judgment₁ Γ t
+| var : Π {Γ t}, t ∈' Γ → judgment₁ Γ t
 | lam : Π {Γ t₁ t₂}, judgment₁ (t₁ :: Γ) t₂ → judgment₁ Γ (arrow t₁ t₂)
 | app : Π {Γ t₁ t₂}, judgment₁ Γ (arrow t₁ t₂) → judgment₁ Γ t₁ → judgment₁ Γ t₂
 open judgment₁
@@ -190,7 +190,7 @@ inductive perm : list α → list α → Type -- proof relevant version
 
 local infix ~ := perm
 
-def mem_perm {t : α} : Π {Γ₁ Γ₂}, Γ₁ ~ Γ₂ → t ∈ Γ₁ → t ∈ Γ₂
+def mem_perm {t : α} : Π {Γ₁ Γ₂}, Γ₁ ~ Γ₂ → t ∈' Γ₁ → t ∈' Γ₂
 | _ _ perm.nil h := h
 | _ _ (perm.skip _) here := here
 | _ _ (perm.skip p) (there h) := there (mem_perm p h)
@@ -246,13 +246,22 @@ using_well_founded
 def contr : judgment₁ (t₁ :: t₁ :: Γ) t₂ → judgment₁ (t₁ :: Γ) t₂ :=
 λ m, subst m (var here)
 
+end judgment₁
+
 ---- 
+
+def type.foldl : list type → type → type :=
+λ Γ t, list.foldl (λ r t, arrow t r) t Γ
+
+#eval type.to_string $ type.foldl [arrow base base, base] base -- "(ι → ((ι → ι) → ι))"
+
+namespace judgment₁
 
 inductive env : list type → Type
 | nil {} : env []
 | step : Π {t Γ}, ν t → env Γ →  env (t :: Γ)
 
-def to_term_var : Π {Γ t}, t ∈ Γ → env ν Γ → term ν t
+def to_term_var : Π {Γ t}, t ∈' Γ → env ν Γ → term ν t
 | (_ :: Γ) _ here (env.step x _) := term.var x
 | (_ :: Γ) _ (there h) (env.step _ Δ) := to_term_var h Δ
 
@@ -260,11 +269,6 @@ def to_term' : Π {Γ t}, judgment₁ Γ t → env ν Γ → term ν t
 | _ _ (var h) Δ := to_term_var ν h Δ
 | _ _ (lam m) Δ := term.lam (λ x, to_term' m (env.step x Δ))
 | _ _ (app m₁ m₂) Δ := term.app (to_term' m₁ Δ) (to_term' m₂ Δ)
-
-def type.foldl : list type → type → type :=
-λ Γ t, list.foldl (λ r t, arrow t r) t Γ
-
-#eval _root_.to_string $ type.foldl [arrow base base, base] base -- "(ι → ((ι → ι) → ι))"
 
 def foldl : Π {Γ t}, judgment₁ Γ t → judgment₁ [] (type.foldl Γ t)
 | [] _ m := m
@@ -280,7 +284,7 @@ end judgment₁
 variables {ν₁ ν₂ : type → Type}
 
 inductive wf : list (Σ t, ν₁ t × ν₂ t) → Π {t}, term ν₁ t → term ν₂ t → Type
-| var : Π {Γ t} {x₁ : ν₁ t} {x₂ : ν₂ t}, sigma.mk t (prod.mk x₁ x₂) ∈ Γ → wf Γ (var x₁) (var x₂)
+| var : Π {Γ t} {x₁ : ν₁ t} {x₂ : ν₂ t}, sigma.mk t (prod.mk x₁ x₂) ∈' Γ → wf Γ (var x₁) (var x₂)
 | lam : Π {Γ t₁ t₂} {f₁ : ν₁ t₁ → term ν₁ t₂} {f₂ : ν₂ t₁ → term ν₂ t₂}, (Π x₁ x₂, wf (⟨t₁, x₁, x₂⟩ :: Γ) (f₁ x₁) (f₂ x₂)) → wf Γ (lam f₁) (lam f₂)
 | app : Π {Γ t₁ t₂} {m₁ : term ν₁ (arrow t₁ t₂)} {m₂ : term ν₂ (arrow t₁ t₂)} {n₁ : term ν₁ t₁} {n₂ : term ν₂ t₁}, wf Γ m₁ m₂ → wf Γ n₁ n₂ → wf Γ (app m₁ n₁) (app m₂ n₂)
 
@@ -289,7 +293,7 @@ def WF (t : type) (m : Term t) : Type 1 :=
 
 constant term_wf : Π t m, WF t m
 
-def to_judgment₁_var : Π {Γ t} {x₁ : ν₁ t} {x₂ : ν₂ t}, (sigma.mk t (prod.mk x₁ x₂)) ∈ Γ → t ∈ (list.map (λ x, sigma.fst x) Γ)
+def to_judgment₁_var : Π {Γ t} {x₁ : ν₁ t} {x₂ : ν₂ t}, (sigma.mk t (prod.mk x₁ x₂)) ∈' Γ → t ∈' (list.map (λ x, sigma.fst x) Γ)
 | _ _ _ _ here := here
 | _ _ _ _ (there h) := there (to_judgment₁_var h)
 
@@ -306,10 +310,6 @@ noncomputable def to_judgment₁ : Term t → judgment₁ [] t :=
 -- def judgment0 (t : type) := Π ν, term ν t
 -- def judgment1 (t₁ t₂ : type) := Π ν, ν t₁ → term ν t₂ -- term with one free variable
 
--- inductive judgment₂ : list type → type → Type
--- | empty : Π {t}, term ν t → judgment₂ [] t
--- | extend : Π {t₁ t₂ Γ}, (ν t₁ → judgment₂ Γ t₂) → judgment₂ (t₁ :: Γ) t₂
-
 def judgment₂ : list type → type → Type :=
 λ Γ t, list.foldr (λ t α, ν t → α) (term ν t) Γ
 
@@ -319,6 +319,7 @@ def Judgment₂ (Γ : list type) (t : type) : Type 1 := -- Type 1
 #reduce Judgment₂ [] base           -- Π ν, term ν base
 #reduce Judgment₂ [base] base       -- Π ν, ν base → term ν base
 #reduce Judgment₂ [base, base] base -- Π ν, ν base → ν base → term ν base
+#reduce Judgment₂ [base, arrow base base] base -- Π ν, ν base → ν (arrow base base) → term ν base
 
 def judgment₂.to_string' : Π {Γ}, judgment₂ (λ t, ℕ) Γ t → ℕ → string
 | [] m lv := "⊢ " ++ term.to_string' m lv
@@ -330,42 +331,18 @@ def judgment₂.to_string : Judgment₂ Γ t → string :=
 instance Judgment₂_has_to_string : has_to_string (Judgment₂ Γ t) :=
 ⟨judgment₂.to_string⟩
 
+-- x₁ : ι → ι, x₂ : ι ⊢ (λ y : ι, x₂) : ι → ι
 def ex2 : Judgment₂ [arrow base base, base] (arrow base base) :=
 λ ν, λ x₁ x₂, lam (λ y, var x₂)
 
 #eval to_string ex2 -- "(0 : (ι → ι)) (1 : ι) ⊢ (λ2.1) : (ι → ι)"
 
----- 
-
-def type.fold : list type → type → type :=
-λ Γ t, list.foldr arrow t Γ
-
-namespace judgment₂
-def to_term' : Π {Γ}, judgment₂ ν Γ t → term ν (type.fold Γ t)
-| [] m := m
-| (t :: Γ) f := lam (λ x, to_term' (f x))
-
-def to_term : Judgment₂ Γ t → Term (type.fold Γ t) :=
-λ m ν, to_term' ν (m ν)
-end judgment₂
+-----
 
 def subst' : Π {t}, term (term ν) t → term ν t
 | _ (var m) := m
 | _ (lam f) := lam (λ x, subst' (f (var x)))
 | _ (app m₁ m₂) := app (subst' m₁) (subst' m₂)
-
-def subst'' : term (term ν) (arrow t₁ t₂) → term ν t₁ → term (term ν) t₂
-| (lam f) m := f m
-| m₁ m₂ := app m₁ (var m₂)
-
-def to_judgment₂' : Π {Γ}, term (term ν) (type.fold Γ t) → judgment₂ ν Γ t
-| [] m := subst' ν m
-| (t :: Γ) m := λ x, to_judgment₂' (subst'' ν m (var x))
-
-def to_judgment₂ : Term (type.fold Γ t) → Judgment₂ Γ t :=
-λ m ν, to_judgment₂' ν (m _)
-
------
 
 namespace judgment₂
 
@@ -381,12 +358,12 @@ def xchg' : Π {Γ₁ Γ₂}, (Γ₁ ~ Γ₂) → judgment₂ ν Γ₁ t → jud
 def xchg : (Γ₁ ~ Γ₂) → Judgment₂ Γ₁ t → Judgment₂ Γ₂ t :=
 λ h m ν, xchg' ν h (m ν)
 
-def subst''' : Π {Γ}, judgment₂ (term ν) (t₁ :: Γ) t₂ → judgment₂ ν Γ t₁ → judgment₂ ν Γ t₂
+def subst'' : Π {Γ}, judgment₂ (term ν) (t₁ :: Γ) t₂ → judgment₂ ν Γ t₁ → judgment₂ ν Γ t₂
 | [] m₁ m₂ := subst' ν (m₁ m₂)
-| (t :: Γ) f m := λ x, subst''' (λ x', f x' (var x)) (m x)
+| (t :: Γ) f m := λ x, subst'' (λ x', f x' (var x)) (m x)
 
 def subst : Judgment₂ (t₁ :: Γ) t₂ → Judgment₂ Γ t₁ → Judgment₂ Γ t₂ :=
-λ m₁ m₂ ν, subst''' ν (m₁ _) (m₂ ν)
+λ m₁ m₂ ν, subst'' ν (m₁ _) (m₂ ν)
 
 def lam' : Π {Γ}, judgment₂ ν (t₁ :: Γ) t₂ → judgment₂ ν Γ (arrow t₁ t₂)
 | [] m := lam (λ x, m x)
@@ -406,67 +383,86 @@ def var' : Π {Γ}, judgment₂ ν (t :: Γ) t
 | [] := λ x, var x
 | (t :: Γ) := λ x y, var' x
 
-def var : Π {Γ}, t ∈ Γ → Judgment₂ Γ t
+def var : Π {Γ}, t ∈' Γ → Judgment₂ Γ t
 | _ here := λ ν, var' ν
 | _ (there h) := weak (var h)
 
 def contr : Judgment₂ (t₁ :: t₁ :: Γ) t₂ → Judgment₂ (t₁ :: Γ) t₂ := -- same as judgment₁.contr
 λ m, subst m (var here)
 
-def nonfree₁' : Π {t : type}, term (λ t, Prop) t → Prop
-| _ (term.var x) := x
-| _ (term.lam f) := nonfree₁' (f true)
-| _ (term.app m₁ m₂) := nonfree₁' m₁ ∧ nonfree₁' m₂
+def nonfree (m : Judgment₂ (t₁ :: Γ) t₂) : Prop :=
+∃ m', m = weak m' -- ∃ m', ∀ ν, (λ x, (m ν) x) = (λ x, (m' ν))
 
-def nonfree₁'' : Π {Γ : list type}, judgment₂ (λ t, Prop) (t₁ :: Γ) t₂ → Prop
-| [] m := nonfree₁' (m false)
-| (t :: Γ) m := nonfree₁'' (λ x, m x true)
-
-def nonfree₁ : Judgment₂ (t₁ :: Γ) t₂ → Prop :=
-λ m, nonfree₁'' (m _)
-
-def nonfree₂ (m : Judgment₂ (t₁ :: Γ) t₂) : Prop :=
-∃ m', m = weak m'
-
-lemma nonfree_var_lem (m : Judgment₂ (t₁ :: Γ) t₂)
-: nonfree₂ m ↔ ∃ (m' : Judgment₂ Γ t₂), ∀ ν, (λ x, (m ν) x) = (λ x, (m' ν)) :=
-begin
-  unfold nonfree₂,
-  split,
-  { intro h,
-    induction h,
-    existsi h_w,
-    intro ν,
-    rw h_h,
-    refl },
-  { intro h,
-    induction h,
-    existsi h_w,
-    apply funext h_h }
-end
+-- lemma nonfree_var_lem (m : Judgment₂ (t₁ :: Γ) t₂)
+-- : nonfree m ↔ ∃ (m' : Judgment₂ Γ t₂), ∀ ν, (λ x, (m ν) x) = (λ x, (m' ν)) :=
+-- begin
+--   unfold nonfree,
+--   split,
+--   { intro h,
+--     induction h,
+--     existsi h_w,
+--     intro ν,
+--     rw h_h,
+--     refl },
+--   { intro h,
+--     induction h,
+--     existsi h_w,
+--     apply funext h_h }
+-- end
 
 end judgment₂
 
--- instance : setoid (Judgment₂ Γ t) :=
--- ⟨inv_image eq (normalize ∘ judgment₂.to_term),
---  inv_image.equivalence eq (normalize ∘ judgment₂.to_term) eq.equivalence⟩
+---- 
 
--- def zero' : Judgment₂ [] (arrow (arrow base base) (arrow base base)) :=
--- to_judgment₂ zero
+def to_term : Judgment₂ [] t → Term t :=
+id
 
--- def one' : Judgment₂ [] (arrow (arrow base base) (arrow base base)) :=
--- to_judgment₂ one
+def to_judgment₂ : Term t → Judgment₂ [] t :=
+id
 
--- def succ' : Judgment₂ [] (arrow (arrow (arrow base base) (arrow base base)) (arrow (arrow base base) (arrow base base))) :=
--- to_judgment₂ succ
+def type.foldr : list type → type → type :=
+λ Γ t, list.foldr arrow t Γ
 
--- lemma zero_approx_zero : zero' ≈ zero' :=
--- by reflexivity
+namespace judgment₂
 
--- lemma succ_zero_approx_one : judgment₂.app succ' zero' ≈ one' :=
--- begin
---   unfold has_equiv.equiv setoid.r inv_image,
---   reflexivity
--- end
+def abs' : Π {Γ}, judgment₂ ν Γ t → judgment₂ ν [] (type.foldr Γ t)
+| [] m := m
+| (t :: Γ) f := term.lam (λ x, abs' (f x))
+
+def abs : Judgment₂ Γ t → Term (type.foldr Γ t) :=
+λ m ν, abs' ν (m ν)
+
+def antiabs' : Π {Γ}, judgment₂ (term ν) [] (type.foldr Γ t) → judgment₂ ν Γ t
+| [] m := subst' ν m
+| (t :: Γ) m :=
+  match m with
+  | (term.var x) := λ x, antiabs' (term.app m (term.var (term.var x)))
+  | (term.lam f) := λ x, antiabs' (f (term.var x))
+  | (term.app m₁ m₂) := λ x, antiabs' (term.app m (term.var (term.var x)))
+  end
+
+def antiabs : Judgment₂ [] (type.foldr Γ t) → Judgment₂ Γ t :=
+λ m ν, antiabs' ν (m _)
+
+end judgment₂
+
+instance Judgment₂.setoid : setoid (Judgment₂ Γ t) :=
+⟨inv_image eq (normalize ∘ to_term ∘ judgment₂.abs),
+ inv_image.equivalence eq (normalize ∘ to_term ∘ judgment₂.abs) eq.equivalence⟩
+
+def zero' : Judgment₂ [] (arrow (arrow base base) (arrow base base)) :=
+(judgment₂.antiabs ∘ to_judgment₂) zero
+
+def one' : Judgment₂ [] (arrow (arrow base base) (arrow base base)) :=
+(judgment₂.antiabs ∘ to_judgment₂) one
+
+def succ' : Judgment₂ [] (arrow (arrow (arrow base base) (arrow base base)) (arrow (arrow base base) (arrow base base))) :=
+(judgment₂.antiabs ∘ to_judgment₂) succ
+
+lemma zero_approx_zero : zero' ≈ zero' :=
+by canonicity
+
+lemma succ_zero_approx_one : judgment₂.app succ' zero' ≈ one' :=
+by canonicity
 
 end stlc
