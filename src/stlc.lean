@@ -249,6 +249,12 @@ using_well_founded
 def contr : judgment₁ (t₁ :: t₁ :: Γ) t₂ → judgment₁ (t₁ :: Γ) t₂ :=
 λ m, subst m (var here)
 
+def abs : judgment₁ (t₁ :: Γ) t₂ → judgment₁ Γ (arrow t₁ t₂) :=
+lam
+
+def antiabs : judgment₁ Γ (arrow t₁ t₂) → judgment₁ (t₁ :: Γ) t₂ :=
+λ m, app (weak m) (var here)
+
 end judgment₁
 
 ---- 

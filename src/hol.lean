@@ -199,53 +199,53 @@ open term
 
 ----
 
-inductive proof : Π {Γ}, list (Judgment Γ prop) → Judgment Γ prop → Prop
-| assump : Π {Γ Φ} {φ : Judgment Γ prop}, φ ∈ Φ → proof Φ φ
-| refl : Π {Γ Φ t} {m₁ m₂ : Judgment Γ t}, m₁ ≈ m₂ → proof Φ (eq m₁ m₂)
-| cong : Π {Γ Φ t} (m : Judgment (t :: Γ) prop) (m₂ m₁ : Judgment Γ t), proof Φ (eq m₁ m₂) → proof Φ (subst m m₁) → proof Φ (subst m m₂)
-| prop_ext : Π {Γ Φ} {φ₁ φ₂ : Judgment Γ prop}, proof (φ₁ :: Φ) φ₂ → proof (φ₂ :: Φ) φ₁ → proof Φ (eq φ₁ φ₂)
-| fun_ext : Π {Γ Φ t₁ t₂} (m₁ m₂ : Judgment (t₁ :: Γ) t₂), proof (list.map weak Φ) (eq m₁ m₂) → proof Φ (eq (lam m₁) (lam m₂))
+inductive Theorem : Π {Γ}, list (Judgment Γ prop) → Judgment Γ prop → Prop
+| assump : Π {Γ Φ} {φ : Judgment Γ prop}, φ ∈ Φ → Theorem Φ φ
+| refl : Π {Γ Φ t} {m₁ m₂ : Judgment Γ t}, m₁ ≈ m₂ → Theorem Φ (eq m₁ m₂)
+| cong : Π {Γ Φ t} (m : Judgment (t :: Γ) prop) (m₂ m₁ : Judgment Γ t), Theorem Φ (eq m₁ m₂) → Theorem Φ (subst m m₁) → Theorem Φ (subst m m₂)
+| prop_ext : Π {Γ Φ} {φ₁ φ₂ : Judgment Γ prop}, Theorem (φ₁ :: Φ) φ₂ → Theorem (φ₂ :: Φ) φ₁ → Theorem Φ (eq φ₁ φ₂)
+| fun_ext : Π {Γ Φ t₁ t₂} (m₁ m₂ : Judgment (t₁ :: Γ) t₂), Theorem (list.map weak Φ) (eq m₁ m₂) → Theorem Φ (eq (lam m₁) (lam m₂))
 
 -- Let's prove!
 
-example : @proof [prop] [var here] (eq (weak top) (var here)) :=
+example : @Theorem [prop] [var here] (eq (weak top) (var here)) :=
 begin
-  apply proof.prop_ext,
-  { apply proof.assump,
+  apply Theorem.prop_ext,
+  { apply Theorem.assump,
     simp },
-  { apply proof.refl,
+  { apply Theorem.refl,
     canonicity }
 end
 
-example {φ₁ φ₂} {Φ : list (Judgment [] prop)} : proof Φ (app (app and φ₁) φ₂) → proof Φ φ₁ :=
+example {φ₁ φ₂} {Φ : list (Judgment [] prop)} : Theorem Φ (app (app and φ₁) φ₂) → Theorem Φ φ₁ :=
 begin
   intro p,
-  apply proof.cong
+  apply Theorem.cong
     (var here)
     φ₁
     (λ ν, app (lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))) (lam (λ p₁, lam (λ p₂, var p₁)))),
-  { apply proof.refl,
+  { apply Theorem.refl,
     canonicity, },
-  { apply proof.cong
+  { apply Theorem.cong
       (@id (Judgment [arrow _ prop] prop) $ λ ν f, app (var f) (lam (λ p₁, lam (λ p₂, var p₁))))
       (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν)))
       (@id (Judgment [] (arrow _ prop)) $ λ ν, lam (λ f, app (app (var f) (top ν)) (top ν))),
-    { apply proof.cong
+    { apply Theorem.cong
         (var here)
         (eq
           (@id (Judgment [] (arrow _ prop)) $ λ ν, lam (λ f, app (app (var f) (top ν)) (top ν)))
           (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))))
         (λ ν, app (app (lam (λ p₁, lam (λ p₂, eq (lam (λ f : ν (arrow _ (arrow _ prop)), app (app (var f) (top ν)) (top ν))) (lam (λ f, app (app (var f) (var p₁)) (var p₂)))))) (φ₁ ν)) (φ₂ ν)),
-      { apply proof.refl,
+      { apply Theorem.refl,
         canonicity },
       { from p } },
-    { apply proof.cong
+    { apply Theorem.cong
         (var here)
         (@id (Judgment [] _) $ λ ν, app (lam (λ f, app (app (var f) (top ν)) (top ν))) (lam (λ p₁, lam (λ p₂, var p₁))))
         top,
-      { apply proof.refl,
+      { apply Theorem.refl,
         canonicity },
-      { apply proof.refl,
+      { apply Theorem.refl,
         canonicity } } }
 end
 
