@@ -9,14 +9,14 @@ inductive type : Type
 | arrow : type → type → type
 open type
 
-def type.to_string : type → string
+def type.repr : type → string
 | base := "ι"
-| (arrow t₁ t₂) := "(" ++ type.to_string t₁ ++ " → " ++ type.to_string t₂ ++ ")"
+| (arrow t₁ t₂) := "(" ++ type.repr t₁ ++ " → " ++ type.repr t₂ ++ ")"
 
-instance type.has_to_string : has_to_string type :=
-⟨type.to_string⟩
+instance type_has_repr : has_repr type :=
+⟨type.repr⟩
 
-#eval to_string (arrow (arrow base base) base)
+#eval (arrow (arrow base base) base)
 
 ----
 
@@ -33,16 +33,16 @@ def Term (t : type) : Type 1 :=
 
 variables {t t₁ t₂ t₃ : type}
 
-def term.to_string' : Π {t : type}, term (λ t, ℕ) t → ℕ → string
-| _ (var n) _ := to_string n
-| _ (lam f) lv := "(λ" ++ to_string lv ++ "." ++ term.to_string' (f lv) (lv + 1) ++ ")"
-| _ (app m₁ m₂) lv := "(" ++ term.to_string' m₁ lv ++ " " ++ term.to_string' m₂ lv ++ ")"
+def term.repr' : Π {t : type}, term (λ t, ℕ) t → ℕ → string
+| _ (var n) _ := repr n
+| _ (lam f) lv := "(λ" ++ repr lv ++ "." ++ term.repr' (f lv) (lv + 1) ++ ")"
+| _ (app m₁ m₂) lv := "(" ++ term.repr' m₁ lv ++ " " ++ term.repr' m₂ lv ++ ")"
 
-def Term.to_string : Term t → string :=
-λ m, term.to_string' (m _) 0 ++ " : " ++ to_string t
+def term.repr : Term t → string :=
+λ m, term.repr' (m _) 0 ++ " : " ++ repr t
 
-instance Term.has_to_string : has_to_string (Term t) :=
-⟨ Term.to_string ⟩
+instance Term_has_repr : has_repr (Term t) :=
+⟨ term.repr ⟩
 
 def nat : type := arrow (arrow base base) (arrow base base)
 
@@ -58,9 +58,12 @@ def App : Term (arrow t₁ t₂) → Term t₁ → Term t₂ :=
 def succ_zero : Term nat :=
 App succ zero
 
-#eval to_string zero      -- "(λ0.(λ1.1)) : ((ι → ι) → (ι → ι))"
-#eval to_string succ      -- "(λ0.(λ1.(λ2.(1 ((0 1) 2))))) : (((ι → ι) → (ι → ι)) → ((ι → ι) → (ι → ι)))"
-#eval to_string succ_zero -- "((λ0.(λ1.(λ2.(1 ((0 1) 2))))) (λ0.(λ1.1))) : ((ι → ι) → (ι → ι))"
+#eval zero
+--> (λ0.(λ1.1)) : ((ι → ι) → (ι → ι))
+#eval succ
+--> (λ0.(λ1.(λ2.(1 ((0 1) 2))))) : (((ι → ι) → (ι → ι)) → ((ι → ι) → (ι → ι)))
+#eval succ_zero
+--> ((λ0.(λ1.(λ2.(1 ((0 1) 2))))) (λ0.(λ1.1))) : ((ι → ι) → (ι → ι))
 
 -- -- // error!
 -- def ω : Term _ := -- no such type
@@ -114,16 +117,16 @@ def reify : Domain t → Term t :=
 def normalize : Term t → Term t :=
 reify ∘ eval
 
-#eval to_string $ normalize zero
-#eval to_string $ normalize (App succ zero)
-#eval to_string $ normalize (App succ (App succ zero))
-#eval to_string $ normalize (App succ (App succ (App succ zero)))
+#eval normalize zero
+#eval normalize (App succ zero)
+#eval normalize (App succ (App succ zero))
+#eval normalize (App succ (App succ (App succ zero)))
 
 def i : Term (arrow (arrow base base) (arrow base base)) :=
 λ ν, lam (λ f, var f)
 
-#eval to_string i
-#eval to_string $ normalize i
+#eval i
+#eval normalize i
 
 instance : setoid (Term t) :=
 ⟨inv_image eq normalize,
@@ -160,25 +163,25 @@ open judgment₁
 
 variables {Γ Γ₁ Γ₂ : list type}
 
-def judgment₁.to_string' : Π {Γ t}, judgment₁ Γ t → string
-| Γ _ (var h) := to_string $ Γ.length - 1 - (h.rec_on (λ _ _, 0) (λ _ _ _ _ (n : ℕ), n + 1))
-| Γ _ (lam m) := "(λ" ++ to_string Γ.length ++ "." ++ judgment₁.to_string' m ++ ")"
-| _ _ (app m₁ m₂) := "(" ++ judgment₁.to_string' m₁ ++ " " ++ judgment₁.to_string' m₂ ++ ")"
+def judgment₁.repr' : Π {Γ t}, judgment₁ Γ t → string
+| Γ _ (var h) := repr $ Γ.length - 1 - (h.rec_on (λ _ _, 0) (λ _ _ _ _ (n : ℕ), n + 1))
+| Γ _ (lam m) := "(λ" ++ repr Γ.length ++ "." ++ judgment₁.repr' m ++ ")"
+| _ _ (app m₁ m₂) := "(" ++ judgment₁.repr' m₁ ++ " " ++ judgment₁.repr' m₂ ++ ")"
 
-def judgment₁.to_string : Π {Γ t}, judgment₁ Γ t → string :=
+def judgment₁.repr : Π {Γ t}, judgment₁ Γ t → string :=
 λ Γ t m,
 let env := (Γ.foldr (λ t p, prod.mk (prod.mk p.2 t :: p.1) (p.2 + 1)) (prod.mk [] 0)).1 in
-let assigns := list.map (λ p, to_string (prod.fst p) ++ " : " ++ to_string (prod.snd p)) env in
-string.intercalate ", " assigns ++ " ⊢ " ++ judgment₁.to_string' m ++ " : " ++ to_string t
+let assigns := list.map (λ p, repr (prod.fst p) ++ " : " ++ repr (prod.snd p)) env in
+string.intercalate ", " assigns ++ " ⊢ " ++ judgment₁.repr' m ++ " : " ++ repr t
 
 instance : has_to_string (judgment₁ Γ t) :=
-⟨judgment₁.to_string⟩
+⟨judgment₁.repr⟩
 
 -- x₁ : ι → ι, x₀ : ι ⊢ λ y, x₀ : (ι → ι) → ι
 def ex1 : judgment₁ [arrow base base, base] (arrow (arrow base base) base) :=
 lam (var (there (there here)))
 
-#eval to_string ex1 -- "1 : (ι → ι), 0 : ι ⊢ (λ2.0) : ((ι → ι) → ι)"
+#eval ex1 -- "1 : (ι → ι), 0 : ι ⊢ (λ2.0) : ((ι → ι) → ι)"
 
 ----
 
@@ -253,7 +256,7 @@ end judgment₁
 def type.foldl : list type → type → type :=
 λ Γ t, list.foldl (λ r t, arrow t r) t Γ
 
-#eval type.to_string $ type.foldl [arrow base base, base] base -- "(ι → ((ι → ι) → ι))"
+#eval type.foldl [arrow base base, base] base -- "(ι → ((ι → ι) → ι))"
 
 namespace judgment₁
 
@@ -321,21 +324,21 @@ def Judgment₂ (Γ : list type) (t : type) : Type 1 := -- Type 1
 #reduce Judgment₂ [base, base] base -- Π ν, ν base → ν base → term ν base
 #reduce Judgment₂ [base, arrow base base] base -- Π ν, ν base → ν (arrow base base) → term ν base
 
-def judgment₂.to_string' : Π {Γ}, judgment₂ (λ t, ℕ) Γ t → ℕ → string
-| [] m lv := "⊢ " ++ term.to_string' m lv
-| (t :: Γ) f lv := "(" ++ to_string lv ++ " : " ++ to_string t ++ ") " ++ judgment₂.to_string' (f lv) (lv + 1)
+def judgment₂.repr' : Π {Γ}, judgment₂ (λ t, ℕ) Γ t → ℕ → string
+| [] m lv := "⊢ " ++ term.repr' m lv
+| (t :: Γ) f lv := "(" ++ repr lv ++ " : " ++ repr t ++ ") " ++ judgment₂.repr' (f lv) (lv + 1)
 
-def judgment₂.to_string : Judgment₂ Γ t → string :=
-λ m, judgment₂.to_string' (m _) 0 ++ " : " ++ to_string t
+def judgment₂.repr : Judgment₂ Γ t → string :=
+λ m, judgment₂.repr' (m _) 0 ++ " : " ++ repr t
 
-instance Judgment₂_has_to_string : has_to_string (Judgment₂ Γ t) :=
-⟨judgment₂.to_string⟩
+instance Judgment₂_has_repr : has_repr (Judgment₂ Γ t) :=
+⟨judgment₂.repr⟩
 
 -- x₁ : ι → ι, x₂ : ι ⊢ (λ y : ι, x₂) : ι → ι
 def ex2 : Judgment₂ [arrow base base, base] (arrow base base) :=
 λ ν, λ x₁ x₂, lam (λ y, var x₂)
 
-#eval to_string ex2 -- "(0 : (ι → ι)) (1 : ι) ⊢ (λ2.1) : (ι → ι)"
+#eval ex2 -- "(0 : (ι → ι)) (1 : ι) ⊢ (λ2.1) : (ι → ι)"
 
 -----
 
