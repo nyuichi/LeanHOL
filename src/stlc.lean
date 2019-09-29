@@ -1,6 +1,7 @@
 -- 2. simply typed lambda calculus
 
 import moromoro
+import logic.basic
 
 namespace stlc
 
@@ -130,7 +131,7 @@ def i : Term (arrow (arrow base base) (arrow base base)) :=
 
 instance : setoid (Term t) :=
 ⟨inv_image eq normalize,
- inv_image.equivalence eq normalize eq.equivalence⟩
+ inv_image.equivalence eq normalize eq_equivalence⟩
 
 meta def canonicity : tactic unit :=
 `[ try { unfold has_equiv.equiv setoid.r inv_image }, try { reflexivity } ]
@@ -457,7 +458,7 @@ end judgment₂
 
 instance Judgment₂.setoid : setoid (Judgment₂ Γ t) :=
 ⟨inv_image eq (normalize ∘ to_term ∘ judgment₂.abs),
- inv_image.equivalence eq (normalize ∘ to_term ∘ judgment₂.abs) eq.equivalence⟩
+ inv_image.equivalence eq (normalize ∘ to_term ∘ judgment₂.abs) eq_equivalence⟩
 
 def zero' : Judgment₂ [] (arrow (arrow base base) (arrow base base)) :=
 (judgment₂.antiabs ∘ to_judgment₂) zero

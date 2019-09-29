@@ -1,6 +1,7 @@
 -- 3. higher order logic
 
 import moromoro
+import logic.basic
 
 namespace hol
 
@@ -31,7 +32,7 @@ def Judgment (Γ : list type) (t : type) : Type 1 :=
 ----
 
 universe u
-variable {α : Type u}
+variables {α β : Type u}
 
 inductive mem : α → list α → Type u
 | here : Π {x l}, mem x (x :: l)
@@ -154,7 +155,7 @@ reify ∘ eval
 
 instance term_setoid : setoid (Term t) :=
 ⟨inv_image eq normalize,
- inv_image.equivalence eq normalize eq.equivalence⟩
+ inv_image.equivalence eq normalize eq_equivalence⟩
 
 instance judgment_setoid [h : setoid (Term (type.foldr Γ t))] : setoid (Judgment Γ t) :=
 ⟨inv_image h.r judgment.to_term,
@@ -200,9 +201,9 @@ open term
 ----
 
 inductive Theorem : Π {Γ}, list (Judgment Γ prop) → Judgment Γ prop → Prop
-| assump : Π {Γ Φ} {φ : Judgment Γ prop}, φ ∈ Φ → Theorem Φ φ
+| hyp : Π {Γ Φ} {φ : Judgment Γ prop}, φ ∈ Φ → Theorem Φ φ
 | refl : Π {Γ Φ t} {m₁ m₂ : Judgment Γ t}, m₁ ≈ m₂ → Theorem Φ (eq m₁ m₂)
-| cong : Π {Γ Φ t} (m : Judgment (t :: Γ) prop) (m₂ m₁ : Judgment Γ t), Theorem Φ (eq m₁ m₂) → Theorem Φ (subst m m₁) → Theorem Φ (subst m m₂)
+| subst : Π {Γ Φ t} (m : Judgment (t :: Γ) prop) (m₂ m₁ : Judgment Γ t), Theorem Φ (eq m₁ m₂) → Theorem Φ (subst m m₁) → Theorem Φ (subst m m₂)
 | prop_ext : Π {Γ Φ} {φ₁ φ₂ : Judgment Γ prop}, Theorem (φ₁ :: Φ) φ₂ → Theorem (φ₂ :: Φ) φ₁ → Theorem Φ (eq φ₁ φ₂)
 | fun_ext : Π {Γ Φ t₁ t₂} (m₁ m₂ : Judgment (t₁ :: Γ) t₂), Theorem (list.map weak Φ) (eq m₁ m₂) → Theorem Φ (eq (lam m₁) (lam m₂))
 
@@ -211,7 +212,7 @@ inductive Theorem : Π {Γ}, list (Judgment Γ prop) → Judgment Γ prop → Pr
 example : @Theorem [prop] [var here] (eq (weak top) (var here)) :=
 begin
   apply Theorem.prop_ext,
-  { apply Theorem.assump,
+  { apply Theorem.hyp,
     simp },
   { apply Theorem.refl,
     canonicity }
@@ -220,17 +221,17 @@ end
 example {φ₁ φ₂} {Φ : list (Judgment [] prop)} : Theorem Φ (app (app and φ₁) φ₂) → Theorem Φ φ₁ :=
 begin
   intro p,
-  apply Theorem.cong
+  apply Theorem.subst
     (var here)
     φ₁
     (λ ν, app (lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν))) (lam (λ p₁, lam (λ p₂, var p₁)))),
   { apply Theorem.refl,
     canonicity, },
-  { apply Theorem.cong
+  { apply Theorem.subst
       (@id (Judgment [arrow _ prop] prop) $ λ ν f, app (var f) (lam (λ p₁, lam (λ p₂, var p₁))))
       (λ ν, lam (λ f, app (app (var f) (φ₁ ν)) (φ₂ ν)))
       (@id (Judgment [] (arrow _ prop)) $ λ ν, lam (λ f, app (app (var f) (top ν)) (top ν))),
-    { apply Theorem.cong
+    { apply Theorem.subst
         (var here)
         (eq
           (@id (Judgment [] (arrow _ prop)) $ λ ν, lam (λ f, app (app (var f) (top ν)) (top ν)))
@@ -239,7 +240,7 @@ begin
       { apply Theorem.refl,
         canonicity },
       { from p } },
-    { apply Theorem.cong
+    { apply Theorem.subst
         (var here)
         (@id (Judgment [] _) $ λ ν, app (lam (λ f, app (app (var f) (top ν)) (top ν))) (lam (λ p₁, lam (λ p₂, var p₁))))
         top,

@@ -9,6 +9,3 @@ mk_equivalence _
 (by intro x; apply h.1)
 (by intros x y; apply h.2.1)
 (by intros x y z; apply h.2.2)
-
-lemma eq.equivalence : equivalence (@eq α) :=
-mk_equivalence _ eq.refl (@eq.symm _) (@eq.trans _)
